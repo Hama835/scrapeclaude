@@ -1,0 +1,21 @@
+# systemd unit for running without Docker.
+# Install: sudo cp deploy/scrapeclaude.service /etc/systemd/system/ && sudo systemctl enable --now scrapeclaude
+[Unit]
+Description=ScrapeClaude AI scraper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=scraper
+WorkingDirectory=/opt/scrapeclaude
+EnvironmentFile=/opt/scrapeclaude/.env
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/scrapeclaude/.browsers
+ExecStart=/opt/scrapeclaude/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
+Restart=on-failure
+RestartSec=5
+MemoryMax=3G
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

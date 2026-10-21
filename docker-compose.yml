@@ -1,0 +1,33 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/scrapeclaude.db
+    volumes:
+      - ./data:/app/data
+    # Only reachable from the VPS itself; Caddy (below) is the public entry point.
+    ports:
+      - "127.0.0.1:8000:8000"
+    shm_size: "1gb"          # Chromium needs shared memory
+    mem_limit: "3g"
+
+  # HTTPS reverse proxy with automatic Let's Encrypt certificates.
+  # Remove this service if you only access the app over an SSH tunnel or Tailscale.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:

@@ -1,0 +1,9 @@
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:8000 {
+		# Crawls and agentic runs can take a while
+		transport http {
+			read_timeout 10m
+		}
+	}
+}
