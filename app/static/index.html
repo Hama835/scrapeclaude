@@ -7,13 +7,24 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<section id="loginView" hidden>
+  <form id="loginForm" class="card loginCard">
+    <div class="brand"><span class="dot"></span><h1>ScrapeClaude</h1></div>
+    <p class="sub">Self-hosted AI web scraper. Sign in with the API key configured on this server (<code>SC_API_KEY</code>).</p>
+    <label for="keyInput">API key</label>
+    <input type="password" id="keyInput" placeholder="Paste your API key" autocomplete="current-password" required autofocus>
+    <div class="actions"><button class="btn primary" type="submit" id="loginSubmit">Sign in</button></div>
+    <div id="loginErr" class="err"></div>
+    <p class="sub tiny">The key is sent once to create a session cookie for this browser. It is not stored in the browser.</p>
+  </form>
+</section>
+<div id="app" hidden>
 <header>
   <span class="dot"></span><h1>ScrapeClaude</h1>
   <span id="llm"></span>
   <span class="spacer"></span>
   <span id="authBar">
     <a class="btn" href="/docs" target="_blank" rel="noopener">API docs</a>
-    <button class="btn" id="loginBtn" type="button">Log in</button>
     <button class="btn" id="logoutBtn" type="button">Log out</button>
   </span>
 </header>
@@ -33,15 +44,7 @@
     <ul class="hist" id="hist"></ul>
   </aside>
 </div>
-<dialog id="loginDlg">
-  <form id="loginForm">
-    <h3>Log in</h3>
-    <p class="sub">Enter the value of <code>SC_API_KEY</code> from your server. A session cookie is set for this browser only; the key itself is not stored.</p>
-    <input type="password" id="keyInput" placeholder="API key" autocomplete="current-password" required>
-    <div class="actions"><button class="btn primary" type="submit">Log in</button></div>
-    <div id="loginErr" class="err"></div>
-  </form>
-</dialog>
+</div>
 <script src="/static/app.js"></script>
 </body>
 </html>

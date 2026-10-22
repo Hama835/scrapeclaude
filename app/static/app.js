@@ -161,23 +161,27 @@ async function loadHistory(){
   } catch(err){ $("hist").innerHTML = `<li class="err">${esc(err.message)}</li>`; }
 }
 
-function showLogin(){ if (!$("loginDlg").open) $("loginDlg").showModal(); }
+function setAuthed(on){ $("app").hidden = !on; $("loginView").hidden = on; if (!on) { $("keyInput").value = ""; $("keyInput").focus(); } }
+function showLogin(){ setAuthed(false); }
 
 async function login(e){
   e.preventDefault(); $("loginErr").textContent = "";
+  const btn = $("loginSubmit"); btn.disabled = true;
   try {
     await api("/auth/login", {method:"POST", body:JSON.stringify({key:$("keyInput").value.trim()})});
-    $("keyInput").value = ""; $("loginDlg").close(); init();
+    $("keyInput").value = ""; await init();
   } catch(err){ $("loginErr").textContent = err.message; }
+  finally { btn.disabled = false; }
 }
 
 async function logout(){
   try { await api("/auth/logout", {method:"POST", body:"{}"}); } catch {}
-  $("llm").textContent = ""; $("hist").innerHTML = ""; showLogin();
+  $("llm").textContent = ""; $("hist").innerHTML = ""; $("out").hidden = true; showLogin();
 }
 
 async function init(){
   try { await api("/auth/me"); } catch { showLogin(); return; }
+  setAuthed(true);
   try { const s = await api("/v1/status"); const l = s.llm;
     $("llm").textContent = `Claude via ${l.provider==="claude_cli"?"subscription (Claude Code)":l.provider==="anthropic_api"?"API key":l.provider} · ${l.model}`;
   } catch(err){ $("llm").textContent = ""; }
@@ -188,7 +192,6 @@ $("nav").innerHTML = Object.entries(SERVICES).map(([k,s])=>`<button data-s="${k}
 $("nav").addEventListener("click", e => { const b = e.target.closest("button[data-s]"); if (b) select(b.dataset.s); });
 $("form").addEventListener("submit", run);
 $("loginForm").addEventListener("submit", login);
-$("loginBtn").addEventListener("click", showLogin);
 $("logoutBtn").addEventListener("click", logout);
 $("refreshBtn").addEventListener("click", loadHistory);
 select(current); init();
