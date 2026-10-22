@@ -25,7 +25,7 @@ h2{margin:0 0 4px;font-size:20px;letter-spacing:-.01em}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
 label{display:block;font-weight:550;margin:10px 0 4px;font-size:13px}
 label .hint{font-weight:400;color:var(--muted)}
-input[type=text],input[type=number],input[type=password],textarea,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+input[type=text],input[type=number],input[type=password],input[type=email],textarea,select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
 textarea{min-height:80px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
 textarea.prompt{font-family:inherit;font-size:14px}
 .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
