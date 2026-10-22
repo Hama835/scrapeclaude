@@ -5,7 +5,7 @@ services:
     env_file: .env
     environment:
       DB_PATH: /app/data/scrapeclaude.db
-      BROWSER_WS_URL: ws://browser:3000/
+      BROWSER_WS_URL: ${BROWSER_WS_URL:-ws://browser:3000/}
       # Caddy is the only client that can reach this container, so trust its X-Forwarded-* headers.
       FORWARDED_ALLOW_IPS: "*"
     volumes:

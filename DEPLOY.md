@@ -167,8 +167,9 @@ patchright run-server --port 3000 --host $(tailscale ip -4)
 ```
 
 Keep it running with `launchd` or `nohup`. Install Tailscale on the VPS too (`curl -fsSL https://tailscale.com/install.sh | sh && tailscale up`),
-then in `.env` set `BROWSER_WS_URL=ws://<mac tailscale ip>:3000/` and `docker compose up -d app`. The `browser`
-service can then be removed from `docker-compose.yml` (and its `depends_on`). Browser windows open on the Mac's
+then in `.env` set `BROWSER_WS_URL=ws://<mac tailscale ip>:3000/` and `docker compose up -d app` (the compose file
+falls back to the local `browser` service when the variable is unset). The `browser` service can then be
+stopped with `docker compose stop browser`. Browser windows open on the Mac's
 screen; that is expected and is what makes the fingerprint look real. Note that untrusted pages now render on
 the Mac instead of in an isolated container, so keep the Mac's user account unprivileged.
 
