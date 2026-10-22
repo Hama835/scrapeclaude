@@ -10,12 +10,32 @@ User=scraper
 WorkingDirectory=/opt/scrapeclaude
 EnvironmentFile=/opt/scrapeclaude/.env
 Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/scrapeclaude/.browsers
+Environment=FORWARDED_ALLOW_IPS=127.0.0.1
 ExecStart=/opt/scrapeclaude/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=on-failure
 RestartSec=5
 MemoryMax=3G
+TasksMax=512
+
+# Hardening
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/scrapeclaude/data /home/scraper/.claude
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=~cgroup ipc uts mnt
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

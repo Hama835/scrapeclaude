@@ -25,7 +25,9 @@ Also included:
 - Interactive API docs at `/docs`.
 - Automatic JavaScript rendering: plain HTTP first, headless Chromium when the page needs it (`render_heavy_js: "auto" | true | false`), infinite-scroll support (`number_of_scrolls`).
 - Large pages are split into chunks and the partial results merged, so nothing is silently cut off.
-- Protection against requests to localhost or private networks (on by default), including after redirects.
+- Protection against requests to localhost or private networks (on by default), including redirects and requests made by a rendered page's JavaScript.
+- Dashboard login with an HttpOnly session cookie; API docs are behind the same login.
+- Size limits on fetched pages, request bodies and decompressed sitemaps; per-IP lockout after repeated failed logins; configurable history retention.
 
 Not included compared to the hosted ScrapeGraphAI: billing/credits, teams, SDK packages, and
 built-in rotating residential proxies (you can set your own with `SCRAPE_PROXY_URL`).
@@ -52,9 +54,9 @@ playwright install --with-deps chromium
 npm install -g @anthropic-ai/claude-code   # for subscription mode
 claude                                      # log in once (or set CLAUDE_CODE_OAUTH_TOKEN)
 
-cp .env.example .env    # set SC_API_KEY; ALLOW_PRIVATE_URLS=true is handy for local testing
+cp .env.example .env    # set SC_API_KEY (32+ chars, e.g. openssl rand -hex 32); ALLOW_PRIVATE_URLS=true is handy for local testing
 uvicorn app.main:app --reload --port 8000
-# open http://localhost:8000 and enter your SC_API_KEY under "API key"
+# open http://localhost:8000, click "Log in" and enter your SC_API_KEY
 ```
 
 Tests (use a local test site and a stand-in model, so they make no Claude calls):
@@ -112,20 +114,21 @@ curl -X POST http://localhost:8000/v1/agentic-scrapper -H "Content-Type: applica
        "user_prompt": "Product name, price and specs"}'
 ```
 
-The auth header can be `X-API-Key`, `SGAI-APIKEY` (ScrapeGraphAI style) or `Authorization: Bearer …`.
+The auth header can be `X-API-Key`, `SGAI-APIKEY` (ScrapeGraphAI style) or `Authorization: Bearer …`. `SC_API_KEY` may hold several comma-separated keys. The dashboard logs in with `POST /auth/login` and then uses a session cookie.
 
 ## Project layout
 
 ```
 app/
-  main.py            API routes, auth, request history
+  main.py            API routes, request history, security headers
+  auth.py            API keys, dashboard sessions, failed-login lockout
   config.py          settings (env vars / .env)
   fetcher.py         HTTP + headless Chromium, URL safety checks
   cleaner.py         HTML → Markdown, links, pagination detection
   db.py              SQLite history
   llm/               claude_cli.py (subscription), anthropic_api.py (API key), fake.py (tests)
   services/          scrapers.py, crawler.py, agentic.py, sitemap.py, search.py
-  static/index.html  dashboard
+  static/            dashboard (index.html, app.js, style.css)
 tests/               local test site + API tests
 deploy/              Caddyfile, systemd unit
 ```

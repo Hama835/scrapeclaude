@@ -34,11 +34,26 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw not in (None, "") else default
 
 
+def _keys(name: str) -> tuple[str, ...]:
+    raw = os.environ.get(name, "")
+    return tuple(k.strip() for k in raw.split(",") if k.strip())
+
+
+MIN_API_KEY_LENGTH = 32
+
+
 @dataclass(frozen=True)
 class Settings:
     # --- Access ---
-    # Key that clients must send (header X-API-Key, SGAI-APIKEY, or Bearer).
-    api_key: str = field(default_factory=lambda: os.environ.get("SC_API_KEY", ""))
+    # Keys that clients must send (header X-API-Key, SGAI-APIKEY, or Bearer). Comma-separated for several.
+    api_keys: tuple[str, ...] = field(default_factory=lambda: _keys("SC_API_KEY"))
+    # Only for local experiments: start even when SC_API_KEY is empty.
+    allow_no_auth: bool = field(default_factory=lambda: _bool("ALLOW_NO_AUTH", False))
+    # Failed authentication attempts per client IP before it is locked out for the window.
+    auth_fail_limit: int = field(default_factory=lambda: _int("AUTH_FAIL_LIMIT", 20))
+    auth_fail_window_s: int = field(default_factory=lambda: _int("AUTH_FAIL_WINDOW_S", 600))
+    # Dashboard login session lifetime.
+    session_ttl_s: int = field(default_factory=lambda: _int("SESSION_TTL_S", 12 * 3600))
 
     # --- LLM ---
     # "claude_cli"   -> uses the official `claude` CLI, logged in with your Claude subscription
@@ -56,9 +71,15 @@ class Settings:
 
     # --- Fetching ---
     browser_enabled: bool = field(default_factory=lambda: _bool("BROWSER_ENABLED", True))
+    # Connect to a Playwright browser server (e.g. ws://browser:3000/) instead of launching Chromium locally.
+    browser_ws_url: str = field(default_factory=lambda: os.environ.get("BROWSER_WS_URL", ""))
     chromium_path: str = field(default_factory=lambda: os.environ.get("CHROMIUM_PATH", ""))
+    # Only when the environment cannot provide a Chromium sandbox. Keep false wherever possible.
+    chromium_no_sandbox: bool = field(default_factory=lambda: _bool("CHROMIUM_NO_SANDBOX", False))
     browser_max_pages: int = field(default_factory=lambda: _int("BROWSER_MAX_PAGES", 3))
     fetch_timeout_s: int = field(default_factory=lambda: _int("FETCH_TIMEOUT_S", 30))
+    # Largest response body (and largest decompressed sitemap) we accept from a target site.
+    max_fetch_bytes: int = field(default_factory=lambda: _int("MAX_FETCH_BYTES", 10_000_000))
     user_agent: str = field(
         default_factory=lambda: os.environ.get(
             "USER_AGENT",
@@ -69,6 +90,9 @@ class Settings:
     proxy_url: str = field(default_factory=lambda: os.environ.get("SCRAPE_PROXY_URL", ""))
     # Block localhost / private network targets (protects your VPS internals).
     allow_private_urls: bool = field(default_factory=lambda: _bool("ALLOW_PRIVATE_URLS", False))
+
+    # --- Jobs ---
+    crawl_timeout_s: int = field(default_factory=lambda: _int("CRAWL_TIMEOUT_S", 1800))
 
     # --- Search (for SearchScraper) ---
     # duckduckgo (free, no key) | searxng (SEARXNG_URL) | brave (BRAVE_API_KEY)
@@ -82,6 +106,8 @@ class Settings:
             "DB_PATH", str(Path(__file__).resolve().parent.parent / "data" / "scrapeclaude.db")
         )
     )
+    # Delete history rows older than this many days (0 = keep forever).
+    history_retention_days: int = field(default_factory=lambda: _int("HISTORY_RETENTION_DAYS", 0))
 
 
 settings = Settings()

@@ -4,19 +4,22 @@ Set SC_TEST_REAL_LLM=1 to run the marked tests against the real provider (claude
 """
 from __future__ import annotations
 
+import gzip
 import os
 import socket
 import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import pytest
 
 TMP = tempfile.mkdtemp(prefix="sc-test-")
+TEST_KEY = "test-key-0123456789abcdef0123456789abcdef"
 os.environ.update({
     "SC_ENV_FILE": "/nonexistent",
-    "SC_API_KEY": "test-key",
+    "SC_API_KEY": TEST_KEY,
     "ALLOW_PRIVATE_URLS": "true",
     "DB_PATH": str(Path(TMP) / "test.db"),
     "LLM_PROVIDER": os.environ.get("SC_TEST_PROVIDER", "fake") if os.environ.get("SC_TEST_REAL_LLM") else "fake",
@@ -52,7 +55,11 @@ SITE = {
     "/sitemap.xml": """<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
         <url><loc>{base}/</loc></url><url><loc>{base}/about</loc></url><url><loc>{base}/p/blue</loc></url></urlset>""",
     "/private": "<html><body><h1>Secret</h1></body></html>",
+    "/other-link": '<html><body><h1>Links</h1><a href="{other}/">Other site</a> <a href="/about">About</a></body></html>',
 }
+
+
+OTHER_PORT = 0
 
 
 def _free_port() -> int:
@@ -64,20 +71,71 @@ def _free_port() -> int:
 
 
 @pytest.fixture(scope="session")
-def site_url():
+def site_url(internal_url):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
+    other_base = f"http://127.0.0.1:{OTHER_PORT}"
 
     class H(BaseHTTPRequestHandler):
         def do_GET(self):
-            body = SITE.get(self.path.split("?")[0])
+            path = self.path.split("?")[0]
+            if path.startswith("/redirect-to/"):
+                self.send_response(302)
+                self.send_header("Location", unquote(path[len("/redirect-to/"):]))
+                self.end_headers()
+                return
+            if path.startswith("/fetch-from/"):
+                target = unquote(path[len("/fetch-from/"):])
+                data = (f"<html><body><div id='o'>loading</div><script>fetch({target!r}).then(r=>r.text())"
+                        ".then(t=>{document.getElementById('o').textContent='EXFIL:'+t})"
+                        ".catch(e=>{document.getElementById('o').textContent='ERR:'+e})</script></body></html>").encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path == "/echo-secret":
+                data = f"<html><body><p>secret={self.headers.get('X-Secret', '')}</p></body></html>".encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path == "/big":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                try:
+                    for _ in range(200):
+                        self.wfile.write(b"<p>" + b"x" * 10_000 + b"</p>\n")
+                except BrokenPipeError:
+                    pass
+                return
+            if path == "/bomb.xml.gz":
+                data = gzip.compress(b"<urlset>" + b"<url><loc>https://a.com/x</loc></url>" * 60_000 + b"</urlset>")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/gzip")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path == "/binary.bin":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", "4")
+                self.end_headers()
+                self.wfile.write(b"\x00\x01\x02\x03")
+                return
+            body = SITE.get(path)
             if body is None:
                 self.send_response(404)
                 self.end_headers()
                 return
-            data = body.replace("{base}", base).encode()
+            data = body.replace("{base}", base).replace("{other}", other_base).encode()
             self.send_response(200)
             ctype = "text/plain" if self.path.endswith(".txt") else (
                 "application/xml" if self.path.endswith(".xml") else "text/html; charset=utf-8")
@@ -104,5 +162,51 @@ async def client():
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                 headers={"X-API-Key": "test-key"}, timeout=120) as c:
+                                 headers={"X-API-Key": TEST_KEY}, timeout=120) as c:
         yield c
+
+
+@pytest.fixture(scope="session")
+def internal_url():
+    """A second local server standing in for an internal/other-host service."""
+    global OTHER_PORT
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    port = _free_port()
+    OTHER_PORT = port
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            data = b"<html><body><h1>INTERNAL-SECRET-DATA-42</h1></body></html>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *a):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    time.sleep(0.1)
+    yield f"http://127.0.0.1:{port}"
+    srv.shutdown()
+
+
+@pytest.fixture()
+def blocked_internal(internal_url, monkeypatch):
+    """Make the URL policy treat internal_url as a private address while the test site stays allowed."""
+    from app import fetcher
+
+    original = fetcher.assert_public_url
+    port = int(internal_url.rsplit(":", 1)[1])
+
+    async def guarded(url: str) -> None:
+        if urlparse(url).port == port:
+            raise fetcher.FetchError(f"Blocked private/internal address (test) {url}")
+        await original(url)
+
+    monkeypatch.setattr(fetcher, "assert_public_url", guarded)
+    return internal_url

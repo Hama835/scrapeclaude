@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 
 from ..config import settings
 from .base import DEFAULT_SYSTEM, LLMError, LLMProvider, LLMResult, build_user_message, parse_json_loose
+
+log = logging.getLogger(__name__)
 
 
 class ClaudeCLIProvider(LLMProvider):
@@ -79,7 +82,11 @@ class ClaudeCLIProvider(LLMProvider):
             raise LLMError(f"Claude CLI returned non-JSON output: {out[:300]!r} {err[:300]!r}") from e
 
         if proc.returncode != 0 or payload.get("is_error"):
-            msg = payload.get("result") or err.decode()[:500] or f"exit code {proc.returncode}"
+            stderr = err.decode(errors="replace").strip()
+            if stderr:
+                log.warning("claude cli stderr (exit %s): %s", proc.returncode, stderr[:2000])
+            first_line = stderr.splitlines()[0][:200] if stderr else ""
+            msg = payload.get("result") or first_line or f"exit code {proc.returncode}"
             raise LLMError(f"Claude CLI error: {msg}")
 
         if schema is not None:

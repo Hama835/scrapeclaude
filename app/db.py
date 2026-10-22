@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -14,10 +15,22 @@ _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
 
 
+def _restrict_permissions(path: Path) -> None:
+    try:
+        os.chmod(path.parent, 0o700)
+        for suffix in ("", "-wal", "-shm"):
+            candidate = Path(str(path) + suffix)
+            if candidate.exists():
+                os.chmod(candidate, 0o600)
+    except OSError:
+        pass
+
+
 def conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
-        Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
+        path = Path(settings.db_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
         _conn = sqlite3.connect(settings.db_path, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.execute("PRAGMA journal_mode=WAL")
@@ -36,6 +49,7 @@ def conn() -> sqlite3.Connection:
         )
         _conn.execute("CREATE INDEX IF NOT EXISTS idx_req_created ON requests(created_at DESC)")
         _conn.commit()
+        _restrict_permissions(path)
     return _conn
 
 
@@ -64,6 +78,26 @@ def update_progress(rid: str, result) -> None:
     with _lock:
         conn().execute("UPDATE requests SET result=? WHERE id=?", (json.dumps(result, default=str), rid))
         conn().commit()
+
+
+def mark_stale_failed() -> int:
+    """Jobs still 'processing' at startup were interrupted by a restart."""
+    with _lock:
+        cur = conn().execute(
+            "UPDATE requests SET status='failed', finished_at=?, error=? WHERE status='processing'",
+            (time.time(), "Interrupted by a server restart"),
+        )
+        conn().commit()
+    return cur.rowcount
+
+
+def purge_older_than(days: int) -> int:
+    if days <= 0:
+        return 0
+    with _lock:
+        cur = conn().execute("DELETE FROM requests WHERE created_at < ?", (time.time() - days * 86400,))
+        conn().commit()
+    return cur.rowcount
 
 
 def _row(r: sqlite3.Row, full: bool = True) -> dict:

@@ -21,13 +21,13 @@ def _matches(path: str, patterns: list[str] | None) -> bool:
 
 async def _robots(root: str) -> RobotFileParser | None:
     try:
-        r = await fetcher.http_client().get(root + "/robots.txt")
-    except Exception:
+        r, body = await fetcher.fetch_bytes(root + "/robots.txt", max_bytes=512_000)
+    except fetcher.FetchError:
         return None
     if r.status_code >= 400:
         return None
     rp = RobotFileParser()
-    rp.parse(r.text.splitlines())
+    rp.parse(body.decode("utf-8", errors="replace").splitlines())
     return rp
 
 

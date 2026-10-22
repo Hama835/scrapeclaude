@@ -2,25 +2,38 @@
 from __future__ import annotations
 
 import gzip
+import io
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
 from .. import fetcher
+from ..config import settings
+
+
+def gunzip_limited(data: bytes, limit: int) -> bytes:
+    """Decompress at most `limit` bytes so a tiny .gz cannot expand into gigabytes."""
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(data)) as f:
+            out = f.read(limit + 1)
+    except (OSError, EOFError) as e:
+        raise fetcher.FetchError(f"Invalid gzip data: {e}") from e
+    if len(out) > limit:
+        raise fetcher.FetchError(f"Decompressed sitemap exceeds the {limit} byte limit")
+    return out
 
 
 async def _get(url: str) -> str | None:
     try:
-        r = await fetcher.http_client().get(url)
-    except Exception:
+        r, body = await fetcher.fetch_bytes(url)
+    except fetcher.FetchError:
         return None
     if r.status_code >= 400:
         return None
-    body = r.content
     if url.endswith(".gz") or body[:2] == b"\x1f\x8b":
         try:
-            body = gzip.decompress(body)
-        except OSError:
+            body = gunzip_limited(body, settings.max_fetch_bytes)
+        except fetcher.FetchError:
             return None
     return body.decode("utf-8", errors="replace")
 
