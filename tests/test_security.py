@@ -336,3 +336,50 @@ async def test_remote_browser_connect(site_url, playwright_server):
             assert "Rendered by JS" in res.html and res.rendered
         finally:
             await remote.close()
+
+
+# ---------- Dashboard email + password sign-in ----------
+
+def test_password_hash_roundtrip():
+    h = auth.hash_password("correct horse battery", iterations=1000)
+    assert h.startswith("pbkdf2_sha256:1000:") and "$" not in h
+    assert auth.verify_password("correct horse battery", h)
+    assert not auth.verify_password("wrong", h)
+    assert not auth.verify_password("x", "garbage")
+    assert auth.hash_password("a", 1000) != auth.hash_password("a", 1000)
+
+
+async def test_password_login_mode(client, site_url):
+    anon = {"X-API-Key": ""}
+    assert (await client.get("/auth/mode", headers=anon)).json()["mode"] == "key"
+    h = auth.hash_password("s3cret-password", iterations=1000)
+    with setting("dashboard_email", "me@example.com"), setting("dashboard_password_hash", h):
+        auth.validate_startup()
+        assert (await client.get("/auth/mode", headers=anon)).json()["mode"] == "password"
+        r = await client.post("/auth/login", json={"key": TEST_KEY}, headers=anon)
+        assert r.status_code == 401, "API key must not sign in to the dashboard in password mode"
+        r = await client.post("/auth/login", json={"email": "me@example.com", "password": "nope"}, headers=anon)
+        assert r.status_code == 401
+        r = await client.post("/auth/login", json={"email": "other@example.com", "password": "s3cret-password"}, headers=anon)
+        assert r.status_code == 401
+        r = await client.post("/auth/login", json={"email": "ME@example.com ", "password": "s3cret-password"}, headers=anon)
+        assert r.status_code == 200 and auth.SESSION_COOKIE in r.cookies
+        cookies = {auth.SESSION_COOKIE: r.cookies[auth.SESSION_COOKIE]}
+        assert (await client.get("/v1/status", headers=anon, cookies=cookies)).status_code == 200
+        assert (await client.get("/v1/status")).status_code == 200, "API key header still works for scripts"
+    with setting("dashboard_email", "me@example.com"), setting("dashboard_password_hash", ""):
+        with pytest.raises(RuntimeError, match="both"):
+            auth.validate_startup()
+    with setting("dashboard_email", "me@example.com"), setting("dashboard_password_hash", "plaintext"):
+        with pytest.raises(RuntimeError, match="not a hash"):
+            auth.validate_startup()
+
+
+async def test_password_login_lockout(client):
+    anon = {"X-API-Key": ""}
+    h = auth.hash_password("s3cret-password", iterations=1000)
+    with setting("dashboard_email", "me@example.com"), setting("dashboard_password_hash", h), setting("auth_fail_limit", 3):
+        for _ in range(3):
+            await client.post("/auth/login", json={"email": "me@example.com", "password": "bad"}, headers=anon)
+        r = await client.post("/auth/login", json={"email": "me@example.com", "password": "s3cret-password"}, headers=anon)
+        assert r.status_code == 429

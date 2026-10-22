@@ -26,7 +26,7 @@ Also included:
 - Automatic JavaScript rendering: plain HTTP first, headless Chromium when the page needs it (`render_heavy_js: "auto" | true | false`), infinite-scroll support (`number_of_scrolls`).
 - Large pages are split into chunks and the partial results merged, so nothing is silently cut off.
 - Protection against requests to localhost or private networks (on by default), including redirects and requests made by a rendered page's JavaScript.
-- Dashboard login with an HttpOnly session cookie; API docs are behind the same login.
+- Dashboard sign-in with your email and password (single user, hashed with PBKDF2) and an HttpOnly session cookie; the API key is for scripts only. API docs are behind the same login.
 - Size limits on fetched pages, request bodies and decompressed sitemaps; per-IP lockout after repeated failed logins; configurable history retention.
 
 Not included compared to the hosted ScrapeGraphAI: billing/credits, teams, SDK packages, and
@@ -56,7 +56,8 @@ claude                                      # log in once (or set CLAUDE_CODE_OA
 
 cp .env.example .env    # set SC_API_KEY (32+ chars, e.g. openssl rand -hex 32); ALLOW_PRIVATE_URLS=true is handy for local testing
 uvicorn app.main:app --reload --port 8000
-# open http://localhost:8000, click "Log in" and enter your SC_API_KEY
+# set DASHBOARD_EMAIL and DASHBOARD_PASSWORD_HASH (python -m app.hashpw) for the dashboard sign-in,
+# or leave them empty locally and sign in with SC_API_KEY at http://localhost:8000
 ```
 
 Tests (use a local test site and a stand-in model, so they make no Claude calls):
@@ -114,7 +115,7 @@ curl -X POST http://localhost:8000/v1/agentic-scrapper -H "Content-Type: applica
        "user_prompt": "Product name, price and specs"}'
 ```
 
-The auth header can be `X-API-Key`, `SGAI-APIKEY` (ScrapeGraphAI style) or `Authorization: Bearer …`. `SC_API_KEY` may hold several comma-separated keys. The dashboard logs in with `POST /auth/login` and then uses a session cookie.
+The auth header can be `X-API-Key`, `SGAI-APIKEY` (ScrapeGraphAI style) or `Authorization: Bearer …`. `SC_API_KEY` may hold several comma-separated keys. The dashboard signs in with email + password (`POST /auth/login`) and then uses a session cookie; the API key is never typed into the browser when a password is configured.
 
 ## Project layout
 

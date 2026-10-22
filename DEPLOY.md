@@ -26,8 +26,9 @@ Notes:
 
 ## Security model (read this once)
 
-- Every API call needs the `SC_API_KEY` (header) or a dashboard login (HttpOnly session cookie). The server
-  refuses to start with an empty or short key.
+- Every API call needs the `SC_API_KEY` header (scripts) or a dashboard session (HttpOnly cookie). The dashboard
+  signs in with `DASHBOARD_EMAIL` + a password whose PBKDF2 hash is in `DASHBOARD_PASSWORD_HASH`. The server
+  refuses to start with an empty or short API key.
 - Chromium runs in its own container (`browser`) with no secrets in it, with its sandbox enabled through the
   seccomp profile in `deploy/seccomp_profile.json`. The `app` container holds the Claude token but never
   renders untrusted pages.
@@ -84,6 +85,8 @@ Set at least:
 
 ```
 SC_API_KEY=<output of: openssl rand -hex 32>
+DASHBOARD_EMAIL=you@example.com
+DASHBOARD_PASSWORD_HASH=<output of: docker run --rm scrapeclaude-app python -m app.hashpw 'your password'>
 LLM_PROVIDER=claude_cli
 CLAUDE_CODE_OAUTH_TOKEN=<token from step 3>
 ANTHROPIC_API_KEY=
@@ -113,8 +116,9 @@ Check the Claude login inside the container:
 docker compose exec app claude auth status   # authMethod should be "oauth_token"
 ```
 
-Open `https://scrape.yourdomain.com`, click **Log in**, paste your `SC_API_KEY`. The API docs at `/docs`
-need the same login.
+Open `https://scrape.yourdomain.com` and sign in with `DASHBOARD_EMAIL` and your password. The API docs at
+`/docs` need the same login. To change the password later: generate a new hash with
+`sudo docker compose exec app python -m app.hashpw`, put it in `.env`, and `sudo docker compose up -d app`.
 
 ### Private access without a domain (most secure)
 

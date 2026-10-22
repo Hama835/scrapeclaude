@@ -161,14 +161,30 @@ async function loadHistory(){
   } catch(err){ $("hist").innerHTML = `<li class="err">${esc(err.message)}</li>`; }
 }
 
-function setAuthed(on){ $("app").hidden = !on; $("loginView").hidden = on; if (!on) { $("keyInput").value = ""; $("keyInput").focus(); } }
-function showLogin(){ setAuthed(false); }
+let authMode = "password";
+function setAuthed(on){
+  $("app").hidden = !on; $("loginView").hidden = on;
+  if (!on) {
+    $("keyInput").value = ""; $("passwordInput").value = "";
+    $("passwordFields").hidden = authMode !== "password"; $("keyFields").hidden = authMode === "password";
+    $("loginHint").textContent = authMode === "password" ? "Self-hosted AI web scraper. Sign in to continue."
+      : "No dashboard password is configured (DASHBOARD_EMAIL / DASHBOARD_PASSWORD_HASH), so sign in with the server's API key.";
+    (authMode === "password" ? $("emailInput") : $("keyInput")).focus();
+  }
+}
+async function showLogin(){
+  try { authMode = (await api("/auth/mode")).mode; } catch {}
+  setAuthed(false);
+}
 
 async function login(e){
   e.preventDefault(); $("loginErr").textContent = "";
   const btn = $("loginSubmit"); btn.disabled = true;
   try {
-    await api("/auth/login", {method:"POST", body:JSON.stringify({key:$("keyInput").value.trim()})});
+    const creds = authMode === "password"
+      ? {email:$("emailInput").value.trim(), password:$("passwordInput").value}
+      : {key:$("keyInput").value.trim()};
+    await api("/auth/login", {method:"POST", body:JSON.stringify(creds)});
     $("keyInput").value = ""; await init();
   } catch(err){ $("loginErr").textContent = err.message; }
   finally { btn.disabled = false; }

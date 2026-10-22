@@ -10,12 +10,20 @@
 <section id="loginView" hidden>
   <form id="loginForm" class="card loginCard">
     <div class="brand"><span class="dot"></span><h1>ScrapeClaude</h1></div>
-    <p class="sub">Self-hosted AI web scraper. Sign in with the API key configured on this server (<code>SC_API_KEY</code>).</p>
-    <label for="keyInput">API key</label>
-    <input type="password" id="keyInput" placeholder="Paste your API key" autocomplete="current-password" required autofocus>
+    <p class="sub" id="loginHint">Self-hosted AI web scraper. Sign in to continue.</p>
+    <div id="passwordFields">
+      <label for="emailInput">Email</label>
+      <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="username">
+      <label for="passwordInput">Password</label>
+      <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password">
+    </div>
+    <div id="keyFields" hidden>
+      <label for="keyInput">API key</label>
+      <input type="password" id="keyInput" placeholder="Paste your API key" autocomplete="current-password">
+    </div>
     <div class="actions"><button class="btn primary" type="submit" id="loginSubmit">Sign in</button></div>
     <div id="loginErr" class="err"></div>
-    <p class="sub tiny">The key is sent once to create a session cookie for this browser. It is not stored in the browser.</p>
+    <p class="sub tiny">Signing in creates a session cookie for this browser only. Your credentials are not stored in the browser.</p>
   </form>
 </section>
 <div id="app" hidden>

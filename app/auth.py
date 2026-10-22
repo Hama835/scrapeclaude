@@ -1,6 +1,8 @@
 """API-key and dashboard-session authentication."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import hmac
 import logging
 import secrets
@@ -14,12 +16,49 @@ log = logging.getLogger("scrapeclaude.auth")
 
 SESSION_COOKIE = "sc_session"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+PBKDF2_ITERATIONS = 600_000
 
 _sessions: dict[str, float] = {}
 _failures: dict[str, list[float]] = {}
 
 
+def hash_password(password: str, iterations: int = PBKDF2_ITERATIONS) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return "pbkdf2_sha256:%d:%s:%s" % (
+        iterations, base64.b64encode(salt).decode(), base64.b64encode(digest).decode())
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        algo, iterations, salt_b64, digest_b64 = stored.split(":")
+        if algo != "pbkdf2_sha256":
+            return False
+        salt, expected = base64.b64decode(salt_b64), base64.b64decode(digest_b64)
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, int(iterations))
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(actual, expected)
+
+
+def password_login_enabled() -> bool:
+    return bool(settings.dashboard_email and settings.dashboard_password_hash)
+
+
+def credentials_match(email: str, password: str) -> bool:
+    if not password_login_enabled():
+        return False
+    email_ok = hmac.compare_digest(email.strip().lower().encode(), settings.dashboard_email.encode())
+    return verify_password(password, settings.dashboard_password_hash) and email_ok
+
+
 def validate_startup() -> None:
+    if bool(settings.dashboard_email) != bool(settings.dashboard_password_hash):
+        raise RuntimeError("Set both DASHBOARD_EMAIL and DASHBOARD_PASSWORD_HASH (python -m app.hashpw), or neither.")
+    if settings.dashboard_password_hash and not settings.dashboard_password_hash.startswith("pbkdf2_sha256:"):
+        raise RuntimeError("DASHBOARD_PASSWORD_HASH is not a hash. Generate it with: python -m app.hashpw")
+    if not password_login_enabled():
+        log.warning("DASHBOARD_EMAIL/DASHBOARD_PASSWORD_HASH not set: the dashboard signs in with the API key.")
     if not settings.api_keys:
         if settings.allow_no_auth:
             log.warning("SC_API_KEY is empty and ALLOW_NO_AUTH=true: the API is open to anyone who can reach it.")

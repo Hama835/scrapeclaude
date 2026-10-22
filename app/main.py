@@ -168,7 +168,9 @@ class AgenticReq(BaseModel):
 
 
 class LoginReq(BaseModel):
-    key: str = Field(..., min_length=1, max_length=512)
+    email: str | None = Field(None, max_length=254)
+    password: str | None = Field(None, max_length=512)
+    key: str | None = Field(None, max_length=512)
 
 
 # ---------- Runner ----------
@@ -210,15 +212,31 @@ def _redact(params: dict) -> dict:
 
 # ---------- Auth endpoints ----------
 
+@app.get("/auth/mode", tags=["auth"])
+async def auth_mode():
+    """Tells the dashboard which sign-in form to show."""
+    if not settings.api_keys and not auth.password_login_enabled():
+        return {"mode": "none"}
+    return {"mode": "password" if auth.password_login_enabled() else "key"}
+
+
 @app.post("/auth/login", tags=["auth"])
 async def login(req: LoginReq, request: Request, response: Response):
-    """Log the dashboard in with an API key; sets an HttpOnly session cookie."""
-    if not settings.api_keys:
+    """Sign the dashboard in (email + password, or the API key when no password is configured)."""
+    if not settings.api_keys and not auth.password_login_enabled():
         return {"authenticated": True, "auth_disabled": True}
     auth.ensure_not_locked_out(request)
-    if not auth.key_matches(req.key):
-        auth.record_failure(request, "login with invalid key")
-        raise HTTPException(401, "Invalid API key.")
+    if auth.password_login_enabled():
+        ok = auth.credentials_match(req.email or "", req.password or "")
+        reason = "login with invalid email/password"
+        message = "Invalid email or password."
+    else:
+        ok = bool(req.key) and auth.key_matches(req.key)
+        reason = "login with invalid key"
+        message = "Invalid API key."
+    if not ok:
+        auth.record_failure(request, reason)
+        raise HTTPException(401, message)
     auth.set_session_cookie(response, request, auth.create_session())
     return {"authenticated": True}
 

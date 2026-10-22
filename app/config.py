@@ -54,6 +54,9 @@ class Settings:
     auth_fail_window_s: int = field(default_factory=lambda: _int("AUTH_FAIL_WINDOW_S", 600))
     # Dashboard login session lifetime.
     session_ttl_s: int = field(default_factory=lambda: _int("SESSION_TTL_S", 12 * 3600))
+    # Dashboard sign-in (single user). Hash made with: python -m app.hashpw
+    dashboard_email: str = field(default_factory=lambda: os.environ.get("DASHBOARD_EMAIL", "").strip().lower())
+    dashboard_password_hash: str = field(default_factory=lambda: os.environ.get("DASHBOARD_PASSWORD_HASH", "").strip())
 
     # --- LLM ---
     # "claude_cli"   -> uses the official `claude` CLI, logged in with your Claude subscription
