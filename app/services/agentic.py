@@ -72,6 +72,7 @@ async def agentic(*, url: str, steps: list[str], user_prompt: str | None = None,
     try:
         page = await ctx.new_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=settings.fetch_timeout_s * 1000)
+        await fetcher.wait_for_bot_challenge(page)
         await _settle(page)
 
         for step in steps:

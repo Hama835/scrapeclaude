@@ -50,7 +50,7 @@ terms allow an individual to use the unmodified Claude Code CLI with their own s
 cd projects/scrapeclaude
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-playwright install --with-deps chromium
+patchright install --with-deps chromium   # the browser runs headful, so a display (or Xvfb) is needed
 npm install -g @anthropic-ai/claude-code   # for subscription mode
 claude                                      # log in once (or set CLAUDE_CODE_OAUTH_TOKEN)
 

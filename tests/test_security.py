@@ -306,9 +306,9 @@ def test_db_file_permissions():
 
 @pytest.fixture()
 def playwright_server():
-    exe = shutil.which("playwright", path=os.path.dirname(sys.executable))
+    exe = shutil.which("patchright", path=os.path.dirname(sys.executable))
     if not exe:
-        pytest.skip("playwright CLI not available")
+        pytest.skip("patchright CLI not available")
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -323,7 +323,7 @@ def playwright_server():
             break
     else:
         proc.kill()
-        pytest.skip("playwright run-server did not start")
+        pytest.skip("patchright run-server did not start")
     yield line.split("Listening on", 1)[1].strip()
     proc.kill()
 

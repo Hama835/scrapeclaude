@@ -1,8 +1,9 @@
-"""Download pages: plain HTTP first, headless Chromium when the page needs JavaScript."""
+"""Download pages: plain HTTP first, a stealth Chromium (patchright) when the page needs JavaScript."""
 from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 import os
 import socket
@@ -17,7 +18,8 @@ log = logging.getLogger(__name__)
 
 TEXT_CONTENT_MARKERS = ("text/", "html", "xml", "json", "javascript")
 SKIPPED_RESOURCE_TYPES = {"image", "media", "font"}
-BROWSER_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "PLAYWRIGHT_BROWSERS_PATH", "XDG_RUNTIME_DIR")
+BROWSER_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "PLAYWRIGHT_BROWSERS_PATH", "XDG_RUNTIME_DIR", "DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY")
+BOT_CHALLENGE_MARKERS = ("<title>just a moment...</title>", "_cf_chl_opt", "challenge-error-text", "/cdn-cgi/challenge-platform/h/")
 
 
 class FetchError(RuntimeError):
@@ -195,18 +197,20 @@ class Browser:
     async def _ensure(self):
         async with self._lock:
             if self._browser is None or not self._browser.is_connected():
-                from playwright.async_api import async_playwright
+                from patchright.async_api import async_playwright
 
                 self._pw = self._pw or await async_playwright().start()
                 if settings.browser_ws_url:
+                    launch_options = json.dumps({"headless": settings.browser_headless})
                     self._browser = await self._pw.chromium.connect(
-                        settings.browser_ws_url, timeout=settings.fetch_timeout_s * 1000
+                        settings.browser_ws_url, timeout=settings.fetch_timeout_s * 1000,
+                        headers={"x-playwright-launch-options": launch_options},
                     )
                 else:
                     args = ["--disable-dev-shm-usage"]
                     if settings.chromium_no_sandbox:
                         args.append("--no-sandbox")
-                    launch = {"headless": True, "args": args, "env": _browser_env()}
+                    launch = {"headless": settings.browser_headless, "args": args, "env": _browser_env()}
                     if settings.chromium_path:
                         launch["executable_path"] = settings.chromium_path
                     if settings.proxy_url:
@@ -218,7 +222,7 @@ class Browser:
                           nav_hosts: set[str] | None = None):
         """Returns (context, guard). `headers` are only sent to `headers_host` (host[:port]); `nav_hosts` limits navigations."""
         browser = await self._ensure()
-        options: dict = {"user_agent": settings.user_agent, "viewport": {"width": 1366, "height": 900}}
+        options: dict = {}
         if settings.browser_ws_url and settings.proxy_url:
             options["proxy"] = {"server": settings.proxy_url}
         ctx = await browser.new_context(**options)
@@ -256,11 +260,20 @@ class Browser:
             ctx, guard = await self.new_context(headers, headers_host=url_netloc(url))
             try:
                 page = await ctx.new_page()
-                resp = await page.goto(url, wait_until="domcontentloaded", timeout=settings.fetch_timeout_s * 1000)
+                status = [0]
+
+                def _track_status(resp):
+                    req = resp.request
+                    if req.is_navigation_request() and req.frame == page.main_frame:
+                        status[0] = resp.status
+
+                page.on("response", _track_status)
+                await page.goto(url, wait_until="domcontentloaded", timeout=settings.fetch_timeout_s * 1000)
                 try:
                     await page.wait_for_load_state("networkidle", timeout=min(8000, settings.fetch_timeout_s * 1000))
                 except Exception:
                     pass  # some pages never go idle; we still have the DOM
+                await wait_for_bot_challenge(page)
                 await auto_scroll(page, scrolls)
                 if wait_ms:
                     await page.wait_for_timeout(wait_ms)
@@ -268,7 +281,7 @@ class Browser:
                 await guard.verify()
                 html = await page.content()
                 return FetchResult(
-                    url=url, final_url=page.url, status=resp.status if resp else 0, html=html, rendered=True,
+                    url=url, final_url=page.url, status=status[0], html=html, rendered=True,
                 )
             except FetchError:
                 raise
@@ -283,6 +296,26 @@ class Browser:
         if self._pw:
             await self._pw.stop()
         self._browser = self._pw = None
+
+
+def is_bot_challenge(html: str) -> bool:
+    head = html[:20000].lower()
+    return any(m in head for m in BOT_CHALLENGE_MARKERS)
+
+
+async def _page_is_challenge(page) -> bool:
+    try:
+        return is_bot_challenge(await page.content())
+    except Exception:
+        return True
+
+
+async def wait_for_bot_challenge(page) -> None:
+    deadline = asyncio.get_running_loop().time() + settings.challenge_wait_s
+    while await _page_is_challenge(page):
+        if asyncio.get_running_loop().time() >= deadline:
+            return
+        await page.wait_for_timeout(1000)
 
 
 async def auto_scroll(page, scrolls: int) -> None:
@@ -310,6 +343,13 @@ def looks_js_rendered(html: str) -> bool:
 async def fetch(url: str, render_js: str | bool = "auto", wait_ms: int = 1000, scrolls: int = 0,
                 headers: dict | None = None) -> FetchResult:
     """render_js: True = always use browser, False = never, "auto" = only if the page needs it."""
+    result = await _fetch(url, render_js, wait_ms, scrolls, headers)
+    if is_bot_challenge(result.html):
+        raise FetchError(f"Blocked by Cloudflare bot protection at {url} (challenge page never cleared)")
+    return result
+
+
+async def _fetch(url: str, render_js: str | bool, wait_ms: int, scrolls: int, headers: dict | None) -> FetchResult:
     if render_js == "auto":
         mode = "auto"
     else:
@@ -322,7 +362,7 @@ async def fetch(url: str, render_js: str | bool = "auto", wait_ms: int = 1000, s
             mode == "auto"
             and settings.browser_enabled
             and "html" in result.content_type
-            and (result.status >= 400 or looks_js_rendered(result.html))
+            and (result.status >= 400 or is_bot_challenge(result.html) or looks_js_rendered(result.html))
         ):
             try:
                 return await browser.render(url, wait_ms, scrolls, headers)

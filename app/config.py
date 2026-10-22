@@ -80,6 +80,9 @@ class Settings:
     # Only when the environment cannot provide a Chromium sandbox. Keep false wherever possible.
     chromium_no_sandbox: bool = field(default_factory=lambda: _bool("CHROMIUM_NO_SANDBOX", False))
     browser_max_pages: int = field(default_factory=lambda: _int("BROWSER_MAX_PAGES", 3))
+    # Headful Chromium (under Xvfb in Docker) passes bot checks that headless never does.
+    browser_headless: bool = field(default_factory=lambda: _bool("BROWSER_HEADLESS", False))
+    challenge_wait_s: int = field(default_factory=lambda: _int("CHALLENGE_WAIT_S", 15))
     fetch_timeout_s: int = field(default_factory=lambda: _int("FETCH_TIMEOUT_S", 30))
     # Largest response body (and largest decompressed sitemap) we accept from a target site.
     max_fetch_bytes: int = field(default_factory=lambda: _int("MAX_FETCH_BYTES", 10_000_000))

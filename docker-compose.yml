@@ -25,7 +25,7 @@ services:
     depends_on:
       - browser
 
-  # Headless Chromium in its own container: it holds no secrets, so a browser exploit
+  # Chromium (patchright, headful under Xvfb) in its own container: it holds no secrets, so a browser exploit
   # cannot read the Claude token or the API key. The app connects over the Docker network.
   browser:
     image: mcr.microsoft.com/playwright:v1.64.0-noble
@@ -33,7 +33,7 @@ services:
     init: true
     user: pwuser
     working_dir: /home/pwuser
-    command: ["npx", "-y", "playwright@1.64.0", "run-server", "--port", "3000", "--host", "0.0.0.0"]
+    command: ["xvfb-run", "-a", "npx", "-y", "patchright@1.64.1", "run-server", "--port", "3000", "--host", "0.0.0.0"]
     shm_size: "1gb"          # Chromium needs shared memory
     mem_limit: "2g"
     pids_limit: 1024

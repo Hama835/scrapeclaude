@@ -22,7 +22,11 @@ Notes:
 - Typical matching plans: Hetzner CX32 / CPX31 (4 vCPU, 8 GB), DigitalOcean / Vultr 4–8 GB droplets,
   Contabo VPS S/M. A European region (e.g. Germany or Finland) gives good latency to the Middle East.
 - Claude does the heavy thinking remotely, so no GPU is needed.
-- Some sites block datacenter IPs. If that matters, put a residential proxy in `SCRAPE_PROXY_URL`.
+- Some sites (Cloudflare "Just a moment" challenges) block datacenter IPs, and the VPS is one. The browser
+  is a stealth build (patchright) running headful under Xvfb, which clears those challenges from a home IP
+  but not from a cloud IP. Fixes: a residential proxy in `SCRAPE_PROXY_URL`, or a browser on a home machine
+  (see "Browser on a home machine" below). Blocked pages fail with "Blocked by Cloudflare bot protection"
+  instead of being sent to Claude.
 
 ## Security model (read this once)
 
@@ -152,21 +156,41 @@ All history is in `data/scrapeclaude.db` (mode 600). It contains scraped HTML an
 as sensitive: copy it with cron to an encrypted location, and set `HISTORY_RETENTION_DAYS` so it does not
 grow forever.
 
+## Browser on a home machine (Mac mini over Tailscale)
+
+The app only needs a WebSocket to a patchright server, so the browser can run on a machine with a residential
+IP while the app stays on the VPS. On the Mac mini (logged-in desktop session, Tailscale running):
+
+```bash
+npm install -g patchright@1.64.1 && patchright install chromium
+patchright run-server --port 3000 --host $(tailscale ip -4)
+```
+
+Keep it running with `launchd` or `nohup`. Install Tailscale on the VPS too (`curl -fsSL https://tailscale.com/install.sh | sh && tailscale up`),
+then in `.env` set `BROWSER_WS_URL=ws://<mac tailscale ip>:3000/` and `docker compose up -d app`. The `browser`
+service can then be removed from `docker-compose.yml` (and its `depends_on`). Browser windows open on the Mac's
+screen; that is expected and is what makes the fingerprint look real. Note that untrusted pages now render on
+the Mac instead of in an isolated container, so keep the Mac's user account unprivileged.
+
+To test the app directly on the Mac instead, run it with the "Run locally" steps from README.md; without
+`BROWSER_WS_URL` it launches the headful browser itself.
+
 ## Without Docker (systemd)
 
 ```bash
 apt install -y python3-venv nodejs npm
 useradd -m scraper && chown -R scraper /opt/scrapeclaude
 sudo -u scraper bash -c 'cd /opt/scrapeclaude && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt \
-  && PLAYWRIGHT_BROWSERS_PATH=/opt/scrapeclaude/.browsers .venv/bin/playwright install chromium'
-/opt/scrapeclaude/.venv/bin/playwright install-deps chromium
+  && PLAYWRIGHT_BROWSERS_PATH=/opt/scrapeclaude/.browsers .venv/bin/patchright install chromium'
+/opt/scrapeclaude/.venv/bin/patchright install-deps chromium && apt install -y xvfb
 npm install -g @anthropic-ai/claude-code@2.1.303
 chmod 600 .env && mkdir -p data && chown scraper data && chmod 700 data
 cp deploy/scrapeclaude.service /etc/systemd/system/ && systemctl enable --now scrapeclaude
 ```
 
 Here Chromium runs on the host as the `scraper` user with its normal sandbox (leave `CHROMIUM_NO_SANDBOX`
-false). Then put Caddy or nginx in front of `127.0.0.1:8000` for HTTPS, reusing the `header` and
+false). Headful mode needs a display: run the service under `xvfb-run -a`, or set `BROWSER_HEADLESS=true` and
+accept that bot challenges will fail. Then put Caddy or nginx in front of `127.0.0.1:8000` for HTTPS, reusing the `header` and
 `request_body` blocks from `deploy/Caddyfile`.
 
 ## Troubleshooting

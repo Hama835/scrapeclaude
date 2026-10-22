@@ -11,7 +11,7 @@ WorkingDirectory=/opt/scrapeclaude
 EnvironmentFile=/opt/scrapeclaude/.env
 Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/scrapeclaude/.browsers
 Environment=FORWARDED_ALLOW_IPS=127.0.0.1
-ExecStart=/opt/scrapeclaude/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
+ExecStart=/usr/bin/xvfb-run -a /opt/scrapeclaude/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=on-failure
 RestartSec=5
 MemoryMax=3G
